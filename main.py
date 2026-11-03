@@ -7,6 +7,7 @@ import random
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
+from aiohttp import web  # Render uchun mini HTTP-server
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
@@ -287,10 +288,34 @@ async def cb_stop(cb: CallbackQuery):
     await cb.answer()
 
 
+# ---------- Render uchun mini HTTP-server ----------
+async def handle_health(request):
+    # UptimeRobot va Render shu manzilga murojaat qiladi, javob: 200 OK
+    return web.Response(text="OK")
+
+
+async def start_server():
+    app = web.Application()
+    app.router.add_get("/", handle_health)         # GET va HEAD ni ham qabul qiladi
+    app.router.add_get("/healthz", handle_health)  # Render health check uchun
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", "10000"))         # Render PORT ni o'zi beradi
+    site = web.TCPSite(runner, "0.0.0.0", port)    # 0.0.0.0 bo'lishi shart
+    await site.start()                             # serverni fonda ishga tushiradi
+    logging.info("HTTP server %s-portda ishlayapti", port)
+    return runner
+
+
 async def main():
     logging.basicConfig(level=logging.INFO)
+    runner = await start_server()                  # 1) avval HTTP-server
     bot = Bot(TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)                # 2) keyin bot (to'xtamay ishlaydi)
+    finally:
+        await bot.session.close()
+        await runner.cleanup()
 
 
 if __name__ == "__main__":
